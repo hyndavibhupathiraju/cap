@@ -1,0 +1,520 @@
+package com.commerceone.ebs.apps.req.command;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.List;
+
+import org.apache.poi.hssf.usermodel.HSSFDateUtil;
+import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
+import org.apache.poi.openxml4j.opc.OPCPackage;
+import org.apache.poi.ss.usermodel.Cell;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.util.NumberToTextConverter;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
+import com.commerceone.ebs.apps.base.business.BusinessException;
+import com.commerceone.ebs.apps.base.business.BusinessFatalException;
+import com.commerceone.ebs.apps.base.command.CommandException;
+import com.commerceone.ebs.apps.base.command.CommandImpl;
+import com.commerceone.ebs.apps.base.constants.Request;
+import com.commerceone.ebs.apps.base.constants.Response;
+import com.commerceone.ebs.apps.base.custom.constants.Custom_AppIni;
+import com.commerceone.ebs.apps.base.util.TransactionFailedException;
+import com.commerceone.ebs.apps.objectsfactory.C1ObjectsFactory;
+import com.commerceone.ebs.apps.objectsfactory.FactoryException;
+import com.commerceone.ebs.apps.req.business.MassSPDUpdateTemplate;
+import com.commerceone.ebs.apps.req.business.MassSPDUpdateTemplateImportRow;
+import com.commerceone.ebs.apps.req.business.MassSPDUpdateTemplateValidationException;
+import com.commerceone.ebs.apps.util.UIUtil;
+import com.commerceone.ebs.infra.bean.Bean;
+import com.commerceone.ebs.infra.bean.BeanException;
+import com.commerceone.ebs.infra.c1log4j.C1Category;
+import com.commerceone.ebs.infra.dal.dalexception.DalException;
+import com.commerceone.ebs.infra.dal.dalexception.DalFatalException;
+import com.commerceone.ebs.infra.util.AppIniHelper;
+import com.commerceone.ebs.infra.util.C1FatalException;
+import com.commerceone.ebs.infra.util.C1NonFatalException;
+import com.commerceone.ebs.infra.util.ElementException;
+import com.commerceone.ebs.infra.util.UIMessage;
+
+public class ImportMassSPDUpdateCmd extends CommandImpl{
+
+	 public static final String CLASS_NAME = "ImportMassSPDUpdateCmd";
+
+	 static C1Category cat = (C1Category)C1Category.getInstance( ImportMassSPDUpdateCmd.class.getName() );
+	    
+	    public void execute( Bean bean )
+	        throws CommandException
+	    {
+	        File file = null;
+
+	        try
+	        {
+	        	bean.setValue( Response.CLASS_NAME, Response.RETURN_VALUE, false );
+
+	            final String fileServerDir = UIUtil.getFileServerDir( bean );
+
+	            final String uniqueFileName = bean.getValue( Request.CLASS_NAME, Request.UIKEY );
+
+	            file = new File( fileServerDir + uniqueFileName );
+	        
+	            if ( UIMessage.hasMessage( bean ) )
+	            {
+	                // BuyerJob.uploadAttachments placed a message in bean, so return to page to display it.
+	                return;
+	            }
+
+	            this.importMassSPDUpdate( bean, file );
+
+	            UIMessage.addMessage( bean, loadString( bean, "ImportMassSPDUpdateCmd_001", "Successfully imported file." ) );
+
+	            bean.setValue( Response.CLASS_NAME, Response.RETURN_VALUE, true );
+
+	        }
+
+	        catch ( FactoryException ex )
+	        {
+	            throw new CommandException(ex);
+	        }
+	        catch ( BusinessException ex )
+	        {
+	            throw new CommandException(ex);
+	        }
+	        catch ( BusinessFatalException ex )
+	        {
+	            throw new CommandException(ex);
+	        }
+	        catch ( C1NonFatalException ex )
+	        {
+	            defaultErrHandler( bean, ex.getMessage() );
+	        }
+	        catch ( C1FatalException ex )
+	        {
+	            throw new CommandException(ex);
+	        }
+	        catch ( BeanException ex )
+	        {
+	            throw new CommandException(ex);
+	        }
+	        catch ( FileNotFoundException ex )
+	        {
+	            throw new CommandException(ex);
+	        }
+	        catch ( IOException ex )
+	        {
+	            throw new CommandException(ex);
+	        }
+	        finally
+	        {
+	            if ( file != null )
+	            {
+	                file.delete();
+	            }
+	        }
+	    }
+
+		private void importMassSPDUpdate(Bean bean,File file)  throws FileNotFoundException, IOException, BusinessException, BusinessFatalException, CommandException, MassSPDUpdateTemplateValidationException, FactoryException, BeanException
+    {
+        ArrayList<MassSPDUpdateTemplateImportRow> importMassSPDUpdateImportRowArrayList = this.readMassSPDUpdateTemplate( bean, file );
+
+        ImportMassSPDUpdateCmd.saveMassSPDUpdateData( bean, importMassSPDUpdateImportRowArrayList );
+        
+      
+}
+
+		public ArrayList<MassSPDUpdateTemplateImportRow> readMassSPDUpdateTemplate(Bean bean, File file) throws FileNotFoundException, IOException, CommandException, MassSPDUpdateTemplateValidationException, FactoryException, BusinessException, BusinessFatalException
+	    {
+			
+			ArrayList<MassSPDUpdateTemplateImportRow> massSPDUpdateTemplateImportRowArrayList = new ArrayList<MassSPDUpdateTemplateImportRow>();
+
+	        FileInputStream inputStream = null;
+	        OPCPackage opcPackage = null;
+
+	        try
+	        {
+	        	inputStream = new FileInputStream( file );
+	            try
+	            {
+	                opcPackage = OPCPackage.open( inputStream );
+	            }
+	            catch ( InvalidFormatException ex )
+	            {
+	                Object[] args = { ex.getMessage() };
+	                String message = loadString( bean, "ImportMassSPDUpdateCmd_FileInvalid", args, "File is invalid: {0}" );
+	                throw new MassSPDUpdateTemplateValidationException( message );
+	            }	           
+	            
+	            if ( opcPackage != null)
+	            {
+	            	
+	            	MassSPDUpdateTemplate massSPDUpdateTemplate = (MassSPDUpdateTemplate)C1ObjectsFactory.createBO( bean, "MassSPDUpdateTemplate" );
+		            
+	            	massSPDUpdateTemplate.init( bean );
+
+	                Workbook workbook = new XSSFWorkbook( opcPackage );
+
+	                Sheet sheet = workbook.getSheetAt(0);
+	                
+	                StringBuilder stringBuilder = new StringBuilder();
+	                String separator = "";
+	                
+	                ////////////////////////////////////////////////////
+	                String tabName = "MassSPDUpdate"; 
+	                if(!workbook.getSheetName(0).equals(tabName)){
+						String message = "Template format is not correct.(Check the tab name).";
+	                    stringBuilder.append( separator ).append( message );
+	                    separator = "\n";
+					} else {
+									
+	                /////////////////////////////////////////////////////////
+	                //excel column header validation check
+	                for(short rowNumberHeader = 0; rowNumberHeader < 1; rowNumberHeader++){
+	                	Row row = sheet.getRow(rowNumberHeader);
+	                	int columnNumberHeader = 0;
+						int lastcell=sheet.getRow(rowNumberHeader).getLastCellNum();                	
+               	if ( lastcell > 4 ){
+               		String message = "Uploaded file contains invalid columns, please upload a valid file.";
+                       stringBuilder.append( separator ).append( message );
+                       separator = "\n";
+               	} 
+               	else{
+	                	String poNumHeader=null;
+	                	Cell poNumHeaderCell = row.getCell(columnNumberHeader);
+	                	if ( poNumHeaderCell != null ){
+	                		poNumHeader=poNumHeaderCell.getStringCellValue().trim();
+	                	}
+	                	if(poNumHeader==null ||!poNumHeader.equalsIgnoreCase("PO Number")){
+	                        String message = "Uploaded file doesn't contain 'PO Number' column, please upload a valid file.";
+	                        stringBuilder.append( separator ).append( message );
+	                        separator = "\n";
+	                	}
+	                	columnNumberHeader++;
+	                	String lineNumHeader=null;
+	                	Cell lineNumHeaderCell = row.getCell(columnNumberHeader);
+	                	if ( lineNumHeaderCell != null ){
+	                		lineNumHeader=lineNumHeaderCell.getStringCellValue().trim();
+	                	}
+	                	if(lineNumHeader==null ||!lineNumHeader.equalsIgnoreCase("Line Number")){
+	                        String message = "Uploaded file doesn't contain 'Line Number' column, please upload a valid file.";
+	                        stringBuilder.append( separator ).append( message );
+	                        separator = "\n";
+	                	}
+	                	
+	                	columnNumberHeader++;
+	                	String partNumHeader=null;
+	                	Cell partNumHeaderCell = row.getCell(columnNumberHeader);
+	                	if ( partNumHeaderCell != null ){
+	                		partNumHeader=partNumHeaderCell.getStringCellValue().trim();
+	                	}
+	                	if(partNumHeader==null ||!partNumHeader.equalsIgnoreCase("Part Number")){
+	                        String message = "Uploaded file doesn't contain 'Part Number' column, please upload a valid file.";
+	                        stringBuilder.append( separator ).append( message );
+	                        separator = "\n";
+	                	}
+	                	
+	                	columnNumberHeader++;
+	                	String cSPDHeader=null;
+	                	Cell cSPDHeaderCell = row.getCell(columnNumberHeader);
+	                	if ( cSPDHeaderCell != null ){
+	                		cSPDHeader=cSPDHeaderCell.getStringCellValue().trim();
+	                	}
+	                	if(cSPDHeader==null ||!cSPDHeader.equalsIgnoreCase("cSPD (MM/dd/yy)") || !cSPDHeader.contains("cSPD")){
+	                        String message = "Uploaded file doesn't contain 'cSPD' column, please upload a valid file.";
+	                        stringBuilder.append( separator ).append( message );
+	                        separator = "\n";
+	                	}
+	                
+					  }
+	                }
+	                }
+	                
+	                //excel 1000 records,row count validation and cell value validation check
+	                for ( short rowNumber = 1; rowNumber <= sheet.getLastRowNum(); rowNumber++ )
+	                {
+	                    Row row = sheet.getRow(rowNumber);
+	                    String poNumber="";
+	                    
+	                    int columnNumber = 0;
+	                    try{                   
+	                        Cell poNumberCell = row.getCell(columnNumber);
+	                        
+	                        if ( poNumberCell != null )
+	                        {
+	                        	if(poNumberCell.getCellType() == Cell.CELL_TYPE_NUMERIC) {
+	                        		poNumber = NumberToTextConverter.toText(poNumberCell.getNumericCellValue()).trim();
+	                        	    
+	                        	}
+	                             else{
+	                            	 poNumber = poNumberCell.getStringCellValue().trim();
+	                             }
+	                  		  	
+	                        }else{
+	                        	String message = "Please enter PO Number for row :{"+rowNumber+"}";
+		                         stringBuilder.append( separator ).append( message );
+		                         separator = "\n";
+	                        }
+	                    	}catch(NullPointerException np){
+	                        	String message = "Please enter PO Number for row :{"+rowNumber+"}";
+		                         stringBuilder.append( separator ).append( message );
+		                         separator = "\n";
+	                        } 
+	                    columnNumber++;
+	                    int lineNumber = 0;
+	                    try{
+	                    Cell lineNumberCell = row.getCell(columnNumber);
+	                    
+	                    if ( lineNumberCell != null )
+	                    {
+	                    	if(lineNumberCell.getCellType() == Cell.CELL_TYPE_NUMERIC) {
+	                    		lineNumber =(int) lineNumberCell.getNumericCellValue();
+                       	    
+                       	}
+                            else {
+                            	String lineNum = lineNumberCell.getStringCellValue().trim();
+                            	lineNumber=Integer.parseInt(lineNum);
+                            }
+	                    }else{
+	                    	String message = "Please enter line number for row number :{"+rowNumber+"}";
+	                         stringBuilder.append( separator ).append( message );
+	                         separator = "\n";
+	                    }
+	                    }catch(NumberFormatException np){
+	                    	String message = "Please enter line number in numeric format for row :{"+rowNumber+"}";
+	                         stringBuilder.append( separator ).append( message );
+	                         separator = "\n";
+	                    }catch(NullPointerException np){
+	                    	String message = "Please enter line number for row :{"+rowNumber+"}";
+	                         stringBuilder.append( separator ).append( message );
+	                         separator = "\n";
+                        }  
+	                    
+	                    columnNumber++;
+	                    String partNumber="";
+	                    try{                   
+	                        Cell partNumberCell = row.getCell(columnNumber);
+	                        
+	                        if ( partNumberCell != null )
+	                        {
+	                        	if(partNumberCell.getCellType() == Cell.CELL_TYPE_NUMERIC) {
+	                        		partNumber = NumberToTextConverter.toText(partNumberCell.getNumericCellValue()).trim();
+	                        	    
+	                        	}
+	                             else{
+	                            	 partNumber = partNumberCell.getStringCellValue().trim();
+	                             }
+	                  		  	
+	                        }
+	                        }
+	                        catch(NullPointerException np){
+	                        	partNumber="";
+	                        } 
+	                    columnNumber++;
+	                    String cSPD="";
+	                    try{                   
+	                        Cell cSPDCell = row.getCell(columnNumber);
+	                        
+	                        if ( cSPDCell != null )
+	                        {
+	                        	SimpleDateFormat sdf = new SimpleDateFormat("MM/dd/yy");
+	                        	if(cSPDCell.getCellType() == Cell.CELL_TYPE_NUMERIC || cSPDCell.getCellType() == Cell.CELL_TYPE_FORMULA) {
+		                            if(HSSFDateUtil.isCellDateFormatted(cSPDCell))
+		                             {
+		                                 Date exceldate = cSPDCell.getDateCellValue();
+		                                 cSPD= sdf.format(exceldate);
+		                                Date currentDate = new Date();
+		                     			currentDate = new Date( currentDate.getYear(), currentDate.getMonth(), currentDate.getDate(), 0, 0, 0 );
+		                                 if(exceldate.compareTo(currentDate) < 0){                               	 
+		                                	 		                                 
+		                                	 exceldate = null;
+	                            	         String message = "The cSPD Date must be today's date or future date for row :{"+rowNumber+"}";
+		                            	 		stringBuilder.append( separator ).append( message );
+		                            	 		separator = "\n\n";
+		                                 }
+		                                		 
+		                              }
+		                            else {
+		                            	cSPD = NumberToTextConverter.toText(cSPDCell.getNumericCellValue());
+		                            
+	                        		Date exceldate = null;
+	                            	 try {	                            	     
+	                            	     
+	                            	     exceldate = sdf.parse(cSPD);
+	                            	     
+	                            	     if (!cSPD.equals(sdf.format(exceldate))) {
+	                            	    	 exceldate = null;
+	                            	         String message = "Please enter cSPD in *MM/dd/yy* format for row :{"+rowNumber+"}";
+		                            	 		stringBuilder.append( separator ).append( message );
+		                            	 		separator = "\n\n";
+	                            	     }else{
+	                            	     Date currentDate = new Date();
+			                     			currentDate = new Date( currentDate.getYear(), currentDate.getMonth(), currentDate.getDate(), 0, 0, 0 );
+			                                 if(exceldate.compareTo(currentDate) < 0){				                                	 
+			                                	
+			                                	 exceldate = null;
+		                            	         String message = "The cSPD Date must be today's date or future date for row :{"+rowNumber+"}";
+			                            	 		stringBuilder.append( separator ).append( message );
+			                            	 		separator = "\n\n";
+			                                 }
+	                            	     }
+	                            	     
+	                            	 	} catch (ParseException ex) {
+	                            	 		String message = "Please enter cSPD in *MM/dd/yy* format for row :{"+rowNumber+"}";
+	                            	 		stringBuilder.append( separator ).append( message );
+	                            	 		separator = "\n\n";
+	                            	 	}
+		                            }	                        			                        	    
+	                        	}
+	                             else{
+	                            	 cSPD = cSPDCell.getStringCellValue().trim();
+	                            	 Date date = null;
+	                            	 try {	
+	                            		 if(cSPD.contains("-")){
+	                            			 SimpleDateFormat sdf1=new SimpleDateFormat("dd-MM-yy");
+
+	                            			  date=sdf1.parse(cSPD);
+
+	                            			 
+	                            			 if (!cSPD.equals(sdf1.format(date))) {
+		                            	         date = null;
+		                            	         String message = "Please enter cSPD in *MM/dd/yy* format for row :{"+rowNumber+"}";
+			                            	 		stringBuilder.append( separator ).append( message );
+			                            	 		separator = "\n\n";
+		                            	     }else{
+	                            			 
+	                            			 cSPD=sdf.format(date);
+	                            			 
+	                            			 	Date exceldate=sdf.parse(cSPD);
+	                            			 	Date currentDate = new Date();
+				                     			currentDate = new Date( currentDate.getYear(), currentDate.getMonth(), currentDate.getDate(), 0, 0, 0 );
+				                                 if(exceldate.compareTo(currentDate) < 0){				                                	 
+				                                	 exceldate = null;
+			                            	         String message = "The cSPD Date must be today's date or future date for row :{"+rowNumber+"}";
+				                            	 		stringBuilder.append( separator ).append( message );
+				                            	 		separator = "\n\n";
+				                                 }
+		                            	     }
+	                            		 }
+	                            		 else{
+	                            	     date = sdf.parse(cSPD);
+	                            	    
+	                            	     if (!cSPD.equals(sdf.format(date))) {
+	                            	         date = null;
+	                            	         String message = "Please enter cSPD in *MM/dd/yy* format for row :{"+rowNumber+"}";
+		                            	 		stringBuilder.append( separator ).append( message );
+		                            	 		separator = "\n\n";
+	                            	     }else{
+	                            	    	 Date exceldate=sdf.parse(cSPD);
+	                            			 	Date currentDate = new Date();
+				                     			currentDate = new Date( currentDate.getYear(), currentDate.getMonth(), currentDate.getDate(), 0, 0, 0 );
+				                                 if(exceldate.compareTo(currentDate) < 0){				                                	 
+				                                	 exceldate = null;
+			                            	         String message = "The cSPD Date must be today's date or future date for row :{"+rowNumber+"}";
+				                            	 		stringBuilder.append( separator ).append( message );
+				                            	 		separator = "\n\n";
+				                                 }
+	                            	     }
+	                            		 }
+	                            	 	} catch (ParseException ex) {
+	                            	 		String message = "Please enter cSPD in *MM/dd/yy* format for row :{"+rowNumber+"}";
+	                            	 		stringBuilder.append( separator ).append( message );
+	                            	 		separator = "\n\n";
+	                            	 	}	                            	 
+	                             }
+	                  		  	
+	                        }else {
+	                        	String message = "Please enter cSPD for row :{"+rowNumber+"}";
+		                         stringBuilder.append( separator ).append( message );
+		                         separator = "\n";
+	                        }
+	                        }
+	                        catch(NullPointerException np){
+	                        	String message = "Please enter cSPD for row :{"+rowNumber+"}";
+		                         stringBuilder.append( separator ).append( message );
+		                         separator = "\n";
+	                        } 
+	                    
+	                    MassSPDUpdateTemplateImportRow massSPDUpdateTemplateImportRow = new MassSPDUpdateTemplateImportRow(poNumber,lineNumber,partNumber, cSPD);
+	                    massSPDUpdateTemplateImportRowArrayList.add( massSPDUpdateTemplateImportRow );
+						String defaultRows= AppIniHelper.getString( bean, Custom_AppIni.ENTERPRISE_BUYER, "SLB", "MassSPDUpdateRowCount" );
+						int maxRows=Integer.parseInt(defaultRows);
+	                    if (rowNumber>maxRows){
+	                    	 String message = "Uploaded file exceeds limit of "+maxRows+ " records.";
+	                         stringBuilder.append( separator ).append( message );
+	                         separator = "\n";
+	                         throw new MassSPDUpdateTemplateValidationException( stringBuilder.toString() );
+	     	                
+	                    }
+	                    
+	                }
+	                
+	                if ( stringBuilder.length() > 0 )
+	                {
+	                    throw new MassSPDUpdateTemplateValidationException( stringBuilder.toString() );
+	                }
+	            } // if ( opcPackage != null )
+	        } catch (DalException e) {
+				
+				e.printStackTrace();
+			} catch (DalFatalException e) {
+				
+				e.printStackTrace();
+			}
+	        
+	        finally
+	        {
+	            if ( opcPackage != null )
+	            {
+	                opcPackage.revert();
+	            }
+
+	            if( inputStream != null )
+	            {
+	                try
+	                {
+	                    inputStream.close();
+	                }
+	                catch ( IOException ex ) {}
+	            }
+	        }
+
+	        return massSPDUpdateTemplateImportRowArrayList;
+	    }
+
+	                              	
+		
+		public static void saveMassSPDUpdateData(Bean bean,ArrayList<MassSPDUpdateTemplateImportRow> massSPDUpdateTemplateImportRowArrayList)
+			 throws FactoryException, BusinessException, BusinessFatalException, BeanException
+			    {
+			            for ( MassSPDUpdateTemplateImportRow massSPDUpdateTemplateImportRow : massSPDUpdateTemplateImportRowArrayList )
+			            {
+			            	ImportMassSPDUpdateCmd.saveMassUploadData( bean, massSPDUpdateTemplateImportRow );
+			            }  
+			            
+			    }
+
+		public static void saveMassUploadData(Bean bean,MassSPDUpdateTemplateImportRow massSPDUpdateTemplateImportRow) 
+				throws FactoryException, BusinessException, BusinessFatalException, BeanException
+	    {
+			MassSPDUpdateTemplate massSPDUpdateTemplate = (MassSPDUpdateTemplate)C1ObjectsFactory.createBO( bean, "MassSPDUpdateTemplate" );
+			massSPDUpdateTemplate.init( bean );
+    	
+    	try {
+    		massSPDUpdateTemplate.uploadData( bean,massSPDUpdateTemplateImportRow );
+			} catch (TransactionFailedException e) {
+				e.printStackTrace();
+			} catch (ElementException e) {
+				e.printStackTrace();
+			}
+    	  
+		}
+	            
+}
