@@ -443,6 +443,23 @@ public class ImportMassSPDUpdateCmd extends CommandImpl{
 	                        } 
 	                    
 	                    MassSPDUpdateTemplateImportRow massSPDUpdateTemplateImportRow = new MassSPDUpdateTemplateImportRow(poNumber,lineNumber,partNumber, cSPD);
+			    
+			     for(MassSPDUpdateTemplateImportRow massSPDUpdateTemplateImportRowItem : massSPDUpdateTemplateImportRowArrayList) {
+	                    	
+	                    if (massSPDUpdateTemplateImportRowItem.getPO_Number().equals(massSPDUpdateTemplateImportRow.getPO_Number()) &&
+	                    		massSPDUpdateTemplateImportRowItem.getLine_Number().equals(massSPDUpdateTemplateImportRow.getLine_Number())) {
+	                    	
+	                    	duplicate =true;
+	                    	break;
+	                    }
+	                    }
+	                    if(duplicate) {
+	                    	
+	                    	String message = "duplicate po number and line number for row number :{"+rowNumber+"}";
+	                         stringBuilder.append( separator ).append( message );
+	                         separator = "\n";
+	                    }
+	                    else {  
 	                    massSPDUpdateTemplateImportRowArrayList.add( massSPDUpdateTemplateImportRow );
 						String defaultRows= AppIniHelper.getString( bean, Custom_AppIni.ENTERPRISE_BUYER, "SLB", "MassSPDUpdateRowCount" );
 						int maxRows=Integer.parseInt(defaultRows);
@@ -453,7 +470,7 @@ public class ImportMassSPDUpdateCmd extends CommandImpl{
 	                         throw new MassSPDUpdateTemplateValidationException( stringBuilder.toString() );
 	     	                
 	                    }
-	                    
+				    }
 	                }
 	                
 	                if ( stringBuilder.length() > 0 )
